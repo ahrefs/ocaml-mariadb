@@ -339,7 +339,7 @@ module Nonblocking : sig
       val return : 'a -> 'a future
     end
 
-    val wait : t -> Status.t -> Status.t IO.future
+    val wait : t -> Status.t -> (t -> unit IO.future) -> Status.t IO.future
 			(** [wait mariadb status] must wait for the events set in [status]
 					to occur in the [mariadb] connection and return a [Status.t]
 					indicating which events have actually occured. *)

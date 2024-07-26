@@ -360,7 +360,7 @@ module type Wait = sig
     val return : 'a -> 'a future
   end
 
-  val wait : t -> Status.t -> Status.t IO.future
+  val wait : t -> Status.t -> (t -> unit IO.future) -> Status.t IO.future
 end
 
 module type S = sig
@@ -601,16 +601,21 @@ module Make (W : Wait) : S with type 'a future = 'a W.IO.future = struct
   type server_option = Common.server_option =
     | Multi_statements of bool
 
-  let rec nonblocking m (r, k) =
-    match r with
-    | `Ok v -> return (Ok v)
-    | `Wait s -> W.wait m s >>= fun s -> nonblocking m (k s, k)
-    | `Error e -> return (Error e)
+  let close' = close
 
   let rec nonblocking' m (r, k) =
     match r with
     | `Ok -> return_unit
-    | `Wait s -> W.wait m s >>= fun s -> nonblocking' m (k s, k)
+    | `Wait s -> W.wait m s close >>= fun s -> nonblocking' m (k s, k)
+
+  and close m = nonblocking' m (close' m)
+
+  let rec nonblocking m (r, k) =
+  match r with
+  | `Ok v -> return (Ok v)
+  | `Wait s -> W.wait m s close >>= fun s -> nonblocking m (k s, k)
+  | `Error e -> return (Error e)
+    
 
   module Time = Time
   module Field = Field
@@ -686,8 +691,6 @@ module Make (W : Wait) : S with type 'a future = 'a W.IO.future = struct
         nonblocking mariadb (connect mariadb)
     | None ->
         return (Error (2008, "out of memory"))
-
-  let close m = nonblocking' m (close m)
 
   let library_end = Common.library_end
 

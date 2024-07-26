@@ -10,7 +10,7 @@ module S = Mariadb.Nonblocking.Status
 module M = Mariadb.Nonblocking.Make(struct
   module IO = IO
 
-  let wait mariadb status =
+  let wait mariadb status _close =
     let fd = Mariadb.Nonblocking.fd mariadb in
     let rfd = if S.read status then [fd] else [] in
     let wfd = if S.write status then [fd] else [] in
