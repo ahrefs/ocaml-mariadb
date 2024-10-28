@@ -105,10 +105,10 @@ let () =
     | [] -> return ()
     | x :: xs -> f x >>= fun () -> iter_s_list f xs
   in
-  let test_integer () =
+  let _test_integer () =
     connect () >>= or_die "connect" >>= fun dbh ->
     M.prepare dbh
-      "CREATE TEMPORARY TABLE ocaml_mariadb_test (id integer PRIMARY KEY \
+      "CREATE TABLE IF NOT EXISTS ocaml_mariadb_test (id integer PRIMARY KEY \
        AUTO_INCREMENT, value integer, value_unsigned integer unsigned)"
     >>= or_die "prepare create"
     >>= fun create_table_stmt ->
@@ -153,4 +153,79 @@ let () =
     in
     iter_s_list check input >>= fun () -> M.close dbh
   in
-  test_integer ()
+  let _test_integer, test_bigint =
+    let make_check type_ =
+      connect () >>= or_die "connect" >>= fun dbh ->
+      M.prepare dbh
+        (Printf.sprintf
+           "CREATE TABLE IF NOT EXISTS ocaml_mariadb_test (id integer PRIMARY \
+            KEY AUTO_INCREMENT, value %s, value_unsigned %s unsigned)"
+           type_ type_)
+      >>= or_die "prepare create"
+      >>= fun create_table_stmt ->
+      execute_no_data create_table_stmt >>= fun () ->
+      let check (value : [ `Signed of int | `Unsigned of int ]) =
+        let column =
+          match value with
+          | `Signed _ -> "value"
+          | `Unsigned _ -> "value_unsigned"
+        in
+        M.prepare dbh
+          (Printf.sprintf "INSERT INTO ocaml_mariadb_test (%s) VALUES (?)"
+             column)
+        >>= or_die "prepare insert"
+        >>= fun insert_stmt ->
+        let value_to_insert =
+          match value with `Signed n -> n | `Unsigned n -> n
+        in
+        M.Stmt.execute insert_stmt [| `Int value_to_insert |]
+        >>= or_die "insert"
+        >>= fun res ->
+        M.prepare dbh
+          (Printf.sprintf "SELECT %s FROM ocaml_mariadb_test WHERE id = (?)"
+             column)
+        >>= or_die "prepare select"
+        >>= fun select_stmt ->
+        M.Stmt.execute select_stmt [| `Int (M.Res.insert_id res) |]
+        >>= or_die "Stmt.execute"
+        >>= M.Res.fetch (module M.Row.Array)
+        >>= or_die "Res.fetch"
+        >>= function
+        | Some [| inserted_value |] ->
+            assert_field_equal (`Int value_to_insert)
+              (`Int (M.Field.int inserted_value))
+        | _ -> assert false
+      in
+      (dbh, check)
+    in
+    let test_integer () =
+      let dbh, check = make_check "integer" in
+      let input =
+        [
+          `Signed
+            (Int32.max_int |> Int32.to_int (* max value for integer column *));
+          `Signed
+            (Int32.min_int |> Int32.to_int (* min value for integer column *));
+          `Unsigned 4294967295
+          (* max value for unsgined integer column.
+             Produces the following error: insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
+        ]
+      in
+      iter_s_list check input >>= fun () -> M.close dbh
+    in
+    let test_bigint () =
+      let dbh, check = make_check "bigint" in
+      let input =
+        [
+          `Signed Int.max_int
+          (* [Int.max_int] is below the max value for bigint column (which is equivalent to [Int64.max_int])
+             Produces the following error: Parameter (4611686018427387903 : int) came back as (-1 : int) *);
+          `Unsigned Int.max_int
+          (* insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
+        ]
+      in
+      iter_s_list check input >>= fun () -> M.close dbh
+    in
+    (test_integer, test_bigint)
+  in
+  test_bigint ()
