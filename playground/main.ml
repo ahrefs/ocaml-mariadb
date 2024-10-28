@@ -206,7 +206,7 @@ let () =
             (Int32.max_int |> Int32.to_int (* max value for integer column *));
           `Signed
             (Int32.min_int |> Int32.to_int (* min value for integer column *));
-          `Unsigned 4294967295
+          `Unsigned (Unsigned.UInt32.max_int |> Unsigned.UInt32.to_int)
           (* max value for unsgined integer column.
              Produces the following error: insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
         ]
