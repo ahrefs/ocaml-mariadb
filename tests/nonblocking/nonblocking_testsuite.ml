@@ -41,6 +41,8 @@ struct
 
   let string_of_param_type = function
     | `Int -> "integer"
+    | `Int64 -> "int64"
+    | `UInt64 -> "unsigned_int64"
     | `Float -> "double"
     | `String | `Bytes -> "char"
     | `Time -> "datetime"
@@ -56,12 +58,16 @@ struct
     | 2 -> `String
     | 3 -> `Bytes
     | 4 -> `Time
+    | 5 -> `Int64
+    | 6 -> `UInt64
     | _ -> assert false
 
   let random_param param_type =
     if Random.int 6 = 0 then `Null else
     match param_type with
     | `Int -> `Int (Random.bits ())
+    | `Int64 -> `Int64 (Random.bits64 ())
+    | `UInt64 -> `UInt64 (Random.bits64 () |> Unsigned.UInt64.of_int64)
     | `Float -> `Float (ldexp (Random.float 2.0 -. 1.0) (Random.int 16))
     | `String -> `String (random_string ())
     | `Bytes -> `Bytes (Bytes.of_string (random_string ()))
@@ -86,6 +92,8 @@ struct
   let string_of_value = function
     | `Null -> "NULL"
     | `Int i -> sprintf "(%d : int)" i
+    | `Int64 i -> sprintf "(%Ld : int64)" i
+    | `UInt64 i -> sprintf "(%s : uint64)" (Unsigned.UInt64.to_string i)
     | `Float x -> sprintf "(%.8g : float)" x
     | `String s -> sprintf "(%S : string)" s
     | `Bytes s -> sprintf "(%S : bytes)" (Bytes.to_string s)
@@ -107,6 +115,10 @@ struct
     | `Int i, `Int i' -> i = i'
     | `Int i, `Float x | `Float x, `Int i -> float_of_int i = x
     | `Int _, _ | _, `Int _ -> false
+    | `Int64 i, `Int64 i' -> Int64.equal i i'
+    | `Int64 _, _ | _, `Int64 _ -> false
+    | `UInt64 i, `UInt64 i' -> Unsigned.UInt64.equal i i'
+    | `UInt64 _, _ | _, `UInt64 _ -> false
     | `Float x, `Float x' -> equal_float x x'
     | `Float _, _ | _, `Float _ -> false
     | `String s, `String s' -> s = s'
