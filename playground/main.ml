@@ -45,11 +45,11 @@ let () =
   in
   let connect () =
     M.connect
-      ~host:(env "OCAML_MARIADB_HOST" "127.0.0.1")
+      ~host:(env "OCAML_MARIADB_HOST" "some-mariadb.orb.local")
       ~user:(env "OCAML_MARIADB_USER" "root")
         (* ~pass:(env "OCAML_MARIADB_PASS" "") *)
       ~db:(env "OCAML_MARIADB_DB" "experiment")
-      ~port:(env "OCAML_MARIADB_PORT" "4319" |> int_of_string)
+      ~port:(env "OCAML_MARIADB_PORT" "3306" |> int_of_string)
       ()
   in
   let string_of_timestamp t =
