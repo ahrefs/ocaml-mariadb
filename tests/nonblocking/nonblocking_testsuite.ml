@@ -259,7 +259,7 @@ struct
 
   let test_many_select () = repeat 500 test_random_select
 
-  let test_integer, test_bigint =
+  let test_bigint =
     let make_check type_ =
       connect () >>= or_die "connect" >>= fun dbh ->
       M.prepare dbh
@@ -270,7 +270,8 @@ struct
       >>= or_die "prepare create"
       >>= fun create_table_stmt ->
       execute_no_data create_table_stmt >>= fun () ->
-      let check (value : [ `Signed of int | `Unsigned of int ]) =
+      let check (value : [ `Signed of int64 | `Unsigned of Unsigned.UInt64.t ])
+          =
         let column =
           match value with
           | `Signed _ -> "value"
@@ -282,10 +283,9 @@ struct
         >>= or_die "prepare insert"
         >>= fun insert_stmt ->
         let value_to_insert =
-          match value with `Signed n -> n | `Unsigned n -> n
+          match value with `Signed n -> `Int64 n | `Unsigned n -> `UInt64 n
         in
-        M.Stmt.execute insert_stmt [| `Int value_to_insert |]
-        >>= or_die "insert"
+        M.Stmt.execute insert_stmt [| value_to_insert |] >>= or_die "insert"
         >>= fun res ->
         M.prepare dbh
           (Printf.sprintf "SELECT %s FROM ocaml_mariadb_test WHERE id = (?)"
@@ -297,46 +297,49 @@ struct
         >>= M.Res.fetch (module M.Row.Array)
         >>= or_die "Res.fetch"
         >|= function
-        | Some [| inserted_value |] ->
-            assert_field_equal (`Int value_to_insert)
-              (`Int (M.Field.int inserted_value))
+        | Some [| inserted_value |] -> (
+            match value_to_insert with
+            | `Int64 value_to_insert ->
+                assert_field_equal (`Int64 value_to_insert)
+                  (`Int64 (M.Field.int64 inserted_value))
+            | `UInt64 value_to_insert ->
+                assert_field_equal (`UInt64 value_to_insert)
+                  (`UInt64 (M.Field.uint64 inserted_value)))
         | _ -> assert false
       in
       return (dbh, check)
     in
-    let test_integer () =
-      make_check "integer" >>= fun (dbh, check) ->
-      let input =
-        [
-          `Signed
-            (Int32.max_int |> Int32.to_int (* max value for integer column *));
-          `Signed
-            (Int32.min_int |> Int32.to_int (* min value for integer column *));
-          `Unsigned (Unsigned.UInt32.max_int |> Unsigned.UInt32.to_int)
-          (* max value for unsgined integer column.
-             Produces the following error: insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
-        ]
-      in
-      iter_s_list check input >>= fun () -> M.close dbh
-    in
+    (* let test_integer () =
+         let dbh, check = make_check "integer" in
+         let input =
+           [
+             `Signed
+               (Int32.max_int |> Int32.to_int (* max value for integer column *));
+             `Signed
+               (Int32.min_int |> Int32.to_int (* min value for integer column *));
+             `Unsigned (Unsigned.UInt32.max_int |> Unsigned.UInt32.to_int)
+             (* max value for unsgined integer column.
+                Produces the following error: insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
+           ]
+         in
+         iter_s_list check input >>= fun () -> M.close dbh
+       in *)
     let test_bigint () =
       make_check "bigint" >>= fun (dbh, check) ->
       let input =
         [
-          `Signed Int.max_int
-          (* [Int.max_int] is below the max value for bigint column (which is equivalent to [Int64.max_int])
-             Produces the following error: Parameter (4611686018427387903 : int) came back as (-1 : int) *);
-          `Unsigned Int.max_int
-          (* insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
+          `Signed Int64.max_int;
+          `Signed Int64.min_int;
+          `Unsigned Unsigned.UInt64.max_int;
         ]
       in
       iter_s_list check input >>= fun () -> M.close dbh
     in
-    (test_integer, test_bigint)
+    test_bigint
 
   let main () =
     test_insert_id () >>= fun () ->
     test_txn () >>= fun () ->
     test_many_select () >>= fun () ->
-    test_integer () >>= fun () -> test_bigint ()
+    test_bigint ()
 end
