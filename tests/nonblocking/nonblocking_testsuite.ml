@@ -300,9 +300,7 @@ struct
             (Int32.max_int |> Int32.to_int (* max value for integer column *));
           `Signed
             (Int32.min_int |> Int32.to_int (* min value for integer column *));
-          `Unsigned (Unsigned.UInt32.max_int |> Unsigned.UInt32.to_int)
-          (* max value for unsgined integer column.
-             Produces the following error: insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
+          `Unsigned (Unsigned.UInt32.max_int |> Unsigned.UInt32.to_int) (* max value for unsgined integer column. *);
         ]
       in
       iter_s_list check input >>= fun () -> M.close dbh
@@ -311,11 +309,8 @@ struct
       make_check "bigint" >>= fun (dbh, check) ->
       let input =
         [
-          `Signed Int.max_int
-          (* [Int.max_int] is below the max value for bigint column (which is equivalent to [Int64.max_int])
-             Produces the following error: Parameter (4611686018427387903 : int) came back as (-1 : int) *);
-          `Unsigned Int.max_int
-          (* insert: (1264) Out of range value for column 'value_unsigned' at row 1 *);
+          `Signed Int.max_int (* [Int.max_int] is below the max value for bigint column (which is equivalent to [Int64.max_int]) *);
+          `Unsigned Int.max_int;
         ]
       in
       iter_s_list check input >>= fun () -> M.close dbh
