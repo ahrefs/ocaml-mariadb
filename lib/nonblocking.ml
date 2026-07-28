@@ -177,25 +177,17 @@ let rollback_cont mariadb status =
 let rollback mariadb =
   (rollback_start mariadb, rollback_cont mariadb)
 
-type text_query =
-  { query : char Ctypes.ptr
-  ; len   : int
-  }
+let real_query_start mariadb buf len =
+  handle_int mariadb (B.mysql_real_query_start mariadb.Common.raw buf len)
 
-let text_query query =
-  { query = char_ptr_buffer_of_string query
-  ; len   = String.length query
-  }
-
-let real_query_start mariadb q =
-  handle_int mariadb (B.mysql_real_query_start mariadb.Common.raw q.query q.len)
-
-let real_query_cont mariadb _q status =
+let real_query_cont mariadb status =
   handle_int mariadb (B.mysql_real_query_cont mariadb.Common.raw status)
 
 let real_query mariadb query =
-  let q = text_query query in
-  (real_query_start mariadb q, real_query_cont mariadb q)
+  let buf = char_ptr_buffer_of_string query in
+  let len = String.length query in
+  mariadb.Common.query <- Some buf;
+  (real_query_start mariadb buf len, real_query_cont mariadb)
 
 let start_txn mariadb =
   real_query mariadb "START TRANSACTION"
@@ -731,6 +723,7 @@ module Make (W : Wait) : S with type 'a future = 'a W.IO.future = struct
           ; socket  = char_ptr_opt_buffer_of_string socket
           ; flags   = Common.int_of_flags flags
           ; charset = None
+          ; query   = None
           } in
         List.iter (Common.set_client_option mariadb) options;
         nonblocking mariadb (connect mariadb)
@@ -799,8 +792,9 @@ module Make (W : Wait) : S with type 'a future = 'a W.IO.future = struct
         return (Error (Common.error m))
 
   let exec m q =
-    nonblocking m (real_query m q)
-    >>= function
+    nonblocking m (real_query m q) >>= fun res ->
+    m.Common.query <- None;
+    match res with
     | Ok () -> handle_exec m
     | Error _ as e -> return e
 end

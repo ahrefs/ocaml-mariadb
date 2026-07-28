@@ -94,6 +94,7 @@ let connect ?host ?user ?pass ?db ?(port=0) ?socket ?(flags=[]) ?(options=[]) ()
       ; socket  = char_ptr_opt_buffer_of_string socket
       ; flags   = flags
       ; charset = None
+      ; query   = None
       } in
     List.iter (Common.set_client_option mariadb) options;
     match B.mysql_real_connect raw host user pass db port socket flags with

@@ -17,6 +17,7 @@ type 'm t =
   ; socket          : char Ctypes.ptr option
   ; flags           : int32
   ; mutable charset : char Ctypes.ptr option
+  ; mutable query   : char Ctypes.ptr option
   }
   constraint 'm = [< mode]
 
