@@ -219,6 +219,125 @@ struct
 
     M.close dbh
 
+  let test_exec () =
+    connect () >>= or_die "connect" >>= fun dbh ->
+
+    M.exec dbh
+      "CREATE TEMPORARY TABLE ocaml_mariadb_test \
+        (id integer PRIMARY KEY AUTO_INCREMENT, v integer, s text)"
+      >>= or_die "exec create" >>= fun res ->
+    assert (res.M.affected_rows = 0);
+    assert (res.M.insert_id = 0);
+
+    M.exec dbh "INSERT INTO ocaml_mariadb_test (v) VALUES (10), (20), (30)"
+      >>= or_die "exec multi-row insert" >>= fun res ->
+    assert (res.M.affected_rows = 3);
+    assert (res.M.insert_id = 1);
+
+    M.exec dbh "UPDATE ocaml_mariadb_test SET v = v + 1 WHERE v >= 20"
+      >>= or_die "exec update" >>= fun res ->
+    assert (res.M.affected_rows = 2);
+    assert (res.M.insert_id = 0);
+
+    M.exec dbh "SELECT v FROM ocaml_mariadb_test"
+      >>= (function
+       | Ok _ -> die_f "exec of a SELECT unexpectedly succeeded"
+       | Error _ -> return ()) >>= fun () ->
+
+    M.prepare dbh "SELECT v FROM ocaml_mariadb_test WHERE id = 3"
+      >>= or_die "prepare after rejected exec"
+      >>= fun stmt ->
+    M.Stmt.execute stmt [||] >>= or_die "execute" >>= fun res ->
+    fetch_single_row res >>= fun row ->
+    assert (Array.length row = 1 && M.Field.int row.(0) = 31);
+    M.Stmt.close stmt >>= or_die "Stmt.close" >>= fun () ->
+
+    M.exec dbh "MALFORMED STATEMENT"
+      >>= (function
+       | Ok _ -> die_f "exec of a malformed statement unexpectedly succeeded"
+       | Error (errno, _) ->
+          assert (errno = 1064);
+          return ()) >>= fun () ->
+
+    M.prepare dbh "SELECT @@max_allowed_packet"
+      >>= or_die "prepare max_allowed_packet" >>= fun packet_stmt ->
+    M.Stmt.execute packet_stmt [||] >>= or_die "execute" >>= fun res ->
+    fetch_single_row res >>= fun row ->
+    let max_packet = M.Field.int row.(0) in
+    M.Stmt.close packet_stmt >>= or_die "Stmt.close" >>= fun () ->
+
+    let n = min (8 * 1024) (max_packet / 512) in
+    let pad = String.make 256 'x' in
+    let buf = Buffer.create (n * 280) in
+    Buffer.add_string buf "INSERT INTO ocaml_mariadb_test (v, s) VALUES ";
+    for i = 0 to n - 1 do
+      if i > 0 then Buffer.add_char buf ',';
+      bprintf buf "(%d, '%s')" i pad
+    done;
+    M.exec dbh (Buffer.contents buf)
+      >>= or_die "exec bulk insert" >>= fun res ->
+    assert (res.M.affected_rows = n);
+    assert (res.M.insert_id = 4);
+
+    M.close dbh
+
+  let test_exec_no_stmt_prepare () =
+    connect () >>= or_die "connect" >>= fun dbh ->
+    M.prepare dbh
+      "SELECT VARIABLE_VALUE FROM information_schema.SESSION_STATUS \
+        WHERE VARIABLE_NAME = 'Com_stmt_prepare'"
+      >>= function
+    | Error _ -> M.close dbh
+    | Ok status_stmt ->
+    let stmt_prepare_count () =
+      M.Stmt.execute status_stmt [||] >>= or_die "execute status" >>= fun res ->
+      if M.Res.num_rows res = 0 then return None else
+      fetch_single_row res >|= fun row ->
+      Some (int_of_string (M.Field.string row.(0)))
+    in
+    stmt_prepare_count () >>= (function
+     | None -> return ()
+     | Some count ->
+        M.exec dbh "CREATE TEMPORARY TABLE ocaml_mariadb_test (v integer)"
+          >>= or_die "exec create" >>= fun _ ->
+        repeat 10
+          (fun () ->
+            M.exec dbh "INSERT INTO ocaml_mariadb_test (v) VALUES (1), (2)"
+              >>= or_die "exec insert" >>= fun res ->
+            assert (res.M.affected_rows = 2);
+            return ()) >>= fun () ->
+        stmt_prepare_count () >>= fun count' ->
+        assert (count' = Some count);
+        M.prepare dbh "SELECT v FROM ocaml_mariadb_test WHERE v = ?"
+          >>= or_die "prepare control" >>= fun control_stmt ->
+        stmt_prepare_count () >>= fun count'' ->
+        assert (count'' = Some (count + 1));
+        M.Stmt.close control_stmt >>= or_die "Stmt.close control")
+    >>= fun () ->
+    M.Stmt.close status_stmt >>= or_die "Stmt.close status" >>= fun () ->
+    M.close dbh
+
+  let test_blob_roundtrip () =
+    connect () >>= or_die "connect" >>= fun dbh ->
+    M.exec dbh
+      "CREATE TEMPORARY TABLE ocaml_mariadb_test (id integer, data blob)"
+      >>= or_die "exec create" >>= fun _ ->
+    let blob = Bytes.init 4096 (fun i -> Char.chr (i land 0xff)) in
+    M.prepare dbh "INSERT INTO ocaml_mariadb_test (id, data) VALUES (?, ?)"
+      >>= or_die "prepare insert" >>= fun insert_stmt ->
+    M.Stmt.execute insert_stmt [|`Int 1; `Bytes blob|]
+      >>= or_die "insert" >>= fun res ->
+    assert (M.Res.affected_rows res = 1);
+    M.Stmt.close insert_stmt >>= or_die "Stmt.close insert" >>= fun () ->
+    M.prepare dbh "SELECT data FROM ocaml_mariadb_test WHERE id = ?"
+      >>= or_die "prepare select" >>= fun select_stmt ->
+    M.Stmt.execute select_stmt [|`Int 1|] >>= or_die "select" >>= fun res ->
+    fetch_single_row res >>= fun row ->
+    assert (Array.length row = 1);
+    assert (M.Field.bytes row.(0) = blob);
+    M.Stmt.close select_stmt >>= or_die "Stmt.close select" >>= fun () ->
+    M.close dbh
+
   (* Make sure the conversion between timestamps and strings are consistent
    * between MariaDB and OCaml. By sending timestamps to be compared as binary
    * and as string, this also verifies the MYSQL_TIME encoding. *)
@@ -449,6 +568,9 @@ struct
     test_server_properties () >>= fun () ->
     test_insert_id () >>= fun () ->
     test_txn () >>= fun () ->
+    test_exec () >>= fun () ->
+    test_exec_no_stmt_prepare () >>= fun () ->
+    test_blob_roundtrip () >>= fun () ->
     test_json () >>= fun () ->
     test_many_select () >>= fun () ->
     test_integer () >>= fun () -> test_bigint ()

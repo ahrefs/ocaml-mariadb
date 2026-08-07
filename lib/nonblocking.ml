@@ -177,14 +177,20 @@ let rollback_cont mariadb status =
 let rollback mariadb =
   (rollback_start mariadb, rollback_cont mariadb)
 
-let start_txn_start mariadb =
-  handle_int mariadb (B.mysql_real_query_start mariadb.Common.raw "START TRANSACTION")
+let real_query_start mariadb buf len =
+  handle_int mariadb (B.mysql_real_query_start mariadb.Common.raw buf len)
 
-let start_txn_cont mariadb status =
+let real_query_cont mariadb status =
   handle_int mariadb (B.mysql_real_query_cont mariadb.Common.raw status)
 
+let real_query mariadb query =
+  let buf = char_ptr_buffer_of_string query in
+  let len = String.length query in
+  mariadb.Common.query <- Some buf;
+  (real_query_start mariadb buf len, real_query_cont mariadb)
+
 let start_txn mariadb =
-  (start_txn_start mariadb, start_txn_cont mariadb)
+  real_query mariadb "START TRANSACTION"
 
 let build_stmt mariadb raw =
   `Ok (Common.Stmt.init mariadb raw)
@@ -554,6 +560,10 @@ module type S = sig
   val commit : t -> unit result future
   val rollback : t -> unit result future
   val prepare : t -> string -> Stmt.t result future
+
+  type exec_result = { affected_rows : int; insert_id : int }
+
+  val exec : t -> string -> exec_result result future
 end
 
 module Make (W : Wait) : S with type 'a future = 'a W.IO.future = struct
@@ -713,6 +723,7 @@ module Make (W : Wait) : S with type 'a future = 'a W.IO.future = struct
           ; socket  = char_ptr_opt_buffer_of_string socket
           ; flags   = Common.int_of_flags flags
           ; charset = None
+          ; query   = None
           } in
         List.iter (Common.set_client_option mariadb) options;
         nonblocking mariadb (connect mariadb)
@@ -764,4 +775,26 @@ module Make (W : Wait) : S with type 'a future = 'a W.IO.future = struct
     match prepare m q with
     | `Ok nb -> nonblocking m nb
     | `Error e -> return (Error e)
+
+  type exec_result = Common.exec_result =
+    { affected_rows : int
+    ; insert_id     : int
+    }
+
+  let handle_exec m =
+    match Common.query_result m with
+    | Ok result ->
+        return (Ok result)
+    | Error (Some res) ->
+        nonblocking' m (Res.free res) >>= fun () ->
+        return (Error (0, "exec: statement returned a result set, use prepare"))
+    | Error None ->
+        return (Error (Common.error m))
+
+  let exec m q =
+    nonblocking m (real_query m q) >>= fun res ->
+    m.Common.query <- None;
+    match res with
+    | Ok () -> handle_exec m
+    | Error _ as e -> return e
 end

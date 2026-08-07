@@ -155,8 +155,7 @@ let double b param ~at =
 
 let string b param ~at =
   let len = String.length param in
-  let p = allocate_n char ~count:len in
-  String.iteri (fun i c -> (p +@ i) <-@ c) param;
+  let p = Util.char_ptr_buffer_of_string param in
   bind b
     ~buffer:(coerce (ptr char) (ptr void) p)
     ~size:len
@@ -166,8 +165,7 @@ let string b param ~at =
 
 let blob b param ~at =
   let len = Bytes.length param in
-  let p = allocate_n char ~count:len in
-  Bytes.iteri (fun i c -> (p +@ i) <-@ c) param;
+  let p = Util.char_ptr_buffer_of_string (Bytes.unsafe_to_string param) in
   bind b
     ~buffer:(coerce (ptr char) (ptr void) p)
     ~size:len

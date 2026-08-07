@@ -71,6 +71,11 @@ type client_option = Common.client_option =
 type server_option = Common.server_option =
   | Multi_statements of bool
 
+type exec_result = Common.exec_result =
+  { affected_rows : int
+  ; insert_id     : int
+  }
+
 let close mariadb =
   B.mysql_close mariadb.Common.raw
 
@@ -89,6 +94,7 @@ let connect ?host ?user ?pass ?db ?(port=0) ?socket ?(flags=[]) ?(options=[]) ()
       ; socket  = char_ptr_opt_buffer_of_string socket
       ; flags   = flags
       ; charset = None
+      ; query   = None
       } in
     List.iter (Common.set_client_option mariadb) options;
     match B.mysql_real_connect raw host user pass db port socket flags with
@@ -157,6 +163,18 @@ let prepare mariadb query =
 
 let start_txn mariadb =
   wrap_unit mariadb (B.mysql_real_query mariadb.Common.raw "START TRANSACTION")
+
+let exec mariadb query =
+  match wrap_unit mariadb (B.mysql_real_query mariadb.Common.raw query) with
+  | Error e -> Error e
+  | Ok () ->
+      match Common.query_result mariadb with
+      | Ok result -> Ok result
+      | Error (Some res) ->
+          B.mysql_free_result res;
+          Error (0, "exec: statement returned a result set, use prepare")
+      | Error None ->
+          Error (Common.error mariadb)
 
 module Res = struct
   type t = [`Blocking] Common.Res.t

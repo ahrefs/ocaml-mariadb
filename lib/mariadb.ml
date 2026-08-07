@@ -174,6 +174,10 @@ module type S = sig
   val commit : t -> unit result
   val rollback : t -> unit result
   val prepare : t -> string -> Stmt.t result
+
+  type exec_result = { affected_rows : int; insert_id : int }
+
+  val exec : t -> string -> exec_result result
 end
 
 module B = Binding_wrappers

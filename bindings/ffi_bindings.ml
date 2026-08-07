@@ -230,6 +230,18 @@ module Functions (F : Ctypes.FOREIGN) = struct
   let mysql_num_fields = foreign "mysql_num_fields"
     (res @-> returning int)
 
+  let mysql_affected_rows = foreign "mysql_affected_rows"
+    (mysql @-> returning ullong)
+
+  let mysql_insert_id = foreign "mysql_insert_id"
+    (mysql @-> returning ullong)
+
+  let mysql_field_count = foreign "mysql_field_count"
+    (mysql @-> returning uint)
+
+  let mysql_use_result = foreign "mysql_use_result"
+    (mysql @-> returning res_opt)
+
   let mysql_errno = foreign "mysql_errno"
     (mysql @-> returning int)
 

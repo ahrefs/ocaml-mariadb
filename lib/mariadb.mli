@@ -300,6 +300,15 @@ module type S = sig
     (** [prepare mariadb query] creates a prepared statement for [query].  The
         query may contain [?] as placeholders for parameters that can be bound
         by calling [Stmt.execute]. *)
+
+  type exec_result = { affected_rows : int; insert_id : int }
+    (** The result of a statement executed by {!exec}.  The fields have the
+        same meaning as {!Res.affected_rows} and {!Res.insert_id}. *)
+
+  val exec : t -> string -> exec_result result
+    (** [exec mariadb query] executes [query] using the text protocol, without
+        creating a prepared statement on the server.  [query] must be a single
+        statement without [?] placeholders and must not return a result set. *)
 end
 
 (** The module for blocking MariaDB API calls. It should be possible to call
@@ -550,6 +559,10 @@ module Nonblocking : sig
     val commit : t -> unit result future
     val rollback : t -> unit result future
     val prepare : t -> string -> Stmt.t result future
+
+    type exec_result = { affected_rows : int; insert_id : int }
+
+    val exec : t -> string -> exec_result result future
   end
 
   (** Functor that generates a nonblocking database interface, given a

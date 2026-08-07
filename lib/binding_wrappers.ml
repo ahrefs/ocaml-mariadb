@@ -51,6 +51,15 @@ let mysql_stmt_affected_rows stmt =
 let mysql_stmt_insert_id stmt =
   Unsigned.ULLong.to_int @@ B.mysql_stmt_insert_id stmt
 
+let mysql_affected_rows mysql =
+  Unsigned.ULLong.to_int @@ B.mysql_affected_rows mysql
+
+let mysql_insert_id mysql =
+  Unsigned.ULLong.to_int @@ B.mysql_insert_id mysql
+
+let mysql_field_count mysql =
+  Unsigned.UInt.to_int @@ B.mysql_field_count mysql
+
 (* Blocking API *)
 
 let mysql_real_connect mysql host user pass db port socket flags =
@@ -229,9 +238,8 @@ let mysql_stmt_next_result_start stmt =
 let mysql_stmt_next_result_cont stmt status =
   handle_int (fun err -> B.mysql_stmt_next_result_cont err stmt status)
 
-let mysql_real_query_start mysql query =
-  let len = Unsigned.ULong.of_int (String.length query) in
-  let query = char_ptr_buffer_of_string query in
+let mysql_real_query_start mysql query len =
+  let len = Unsigned.ULong.of_int len in
   handle_int (fun err -> B.mysql_real_query_start err mysql query len)
 
 let mysql_real_query_cont mysql status =

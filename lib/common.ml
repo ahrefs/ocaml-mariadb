@@ -17,6 +17,7 @@ type 'm t =
   ; socket          : char Ctypes.ptr option
   ; flags           : int32
   ; mutable charset : char Ctypes.ptr option
+  ; mutable query   : char Ctypes.ptr option
   }
   constraint 'm = [< mode]
 
@@ -82,8 +83,21 @@ type server_option =
 
 type error = int * string
 
+type exec_result =
+  { affected_rows : int
+  ; insert_id     : int
+  }
+
 let error mariadb =
   (B.mysql_errno mariadb.raw, B.mysql_error mariadb.raw)
+
+let query_result mariadb =
+  if B.mysql_field_count mariadb.raw = 0 then
+    Ok { affected_rows = B.mysql_affected_rows mariadb.raw
+       ; insert_id     = B.mysql_insert_id mariadb.raw
+       }
+  else
+    Error (B.mysql_use_result mariadb.raw)
 
 let int_of_server_option = function
   | Multi_statements true -> T.Server_options.multi_statements_on
